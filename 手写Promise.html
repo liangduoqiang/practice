@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+    <meta charset='UTF-8'>
+    <title>Title</title>
+</head>
+<body>
+<script>
+    const PENDING = 'pending'
+    const FULFILLED = 'fulfilled'
+    const REJECTED = 'rejected'
+    
+    class SuperPromise {
+        constructor(executor) {
+            try {
+                executor(this.resolve, this.reject)
+            }
+            catch (e) {
+                this.reject(e)
+            }
+        }
+    
+        status = PENDING
+        
+        fulfilledValue = ''
+        
+        rejectedValue = ''
+        
+        fulfilledCallbacks = []
+        
+        rejectedCallbacks = []
+        
+        resolve = value => {
+            if (this.status === PENDING) {
+                this.status = FULFILLED
+                this.fulfilledValue = value
+                
+                if (this.fulfilledCallbacks.length) {
+                    this.fulfilledCallbacks.forEach(item => item())
+                    this.fulfilledCallbacks = []
+                }
+                
+                if (this.rejectedCallbacks.length) {
+                    this.rejectedCallbacks = []
+                }
+            }
+        }
+        
+        reject = error => {
+            if (this.status === PENDING) {
+                this.status = REJECTED
+                this.rejectedValue = error
+                
+                if (this.rejectedCallbacks.length) {
+                    this.rejectedCallbacks.forEach(item => item())
+                    this.rejectedCallbacks = []
+                }
+                
+                if (this.fulfilledCallbacks.length) {
+                    this.fulfilledCallbacks = []
+                }
+            }
+        }
+        
+        then(fulfilled, rejected) {
+            fulfilled = fulfilled instanceof Function ? fulfilled : v => v
+            rejected = rejected instanceof Function ? rejected : v => { throw v }
+            
+            const nextPromise = new SuperPromise((resolve, reject) => {
+                const fulfilledHandler = () => {
+                    queueMicrotask(() => {
+                        try {
+                            const fulfilledResultValue = fulfilled(this.fulfilledValue)
+                            
+                            promiseResultHandler(
+                                promise,
+                                fulfilledResultValue,
+                                resolve,
+                                reject
+                            )
+                        }
+                        catch (e) {
+                            reject(e)
+                        }
+                    })
+                }
+                const rejectedHandler = () => {
+                    queueMicrotask(() => {
+                        try {
+                            const rejectedResultValue = rejected(this.rejectedValue)
+                            
+                            promiseResultHandler(
+                                promise,
+                                rejectedResultValue,
+                                resolve,
+                                reject
+                            )
+                        }
+                        catch (e) {
+                            reject(e)
+                        }
+                    })
+                }
+                const pendingHandler = () => {
+                    this.fulfilledCallbacks.push(fulfilledHandler)
+                    this.rejectedCallbacks.push(rejectedHandler)
+                }
+                
+                switch (this.status) {
+                    case FULFILLED:
+                        fulfilledHandler()
+                        break
+                    case REJECTED:
+                        rejectedHandler()
+                        break
+                    case PENDING:
+                        pendingHandler()
+                        break
+                }
+            })
+            
+            return nextPromise
+        }
+        
+        catch(onRejected) {
+            const nextPromise = this.then(undefined, onRejected)
+            return nextPromise
+        }
+        
+        finally(callback) {
+            const nextPromise = this.then(
+                data => SuperPromise.resolve(callback()).then(() => data),
+                error => SuperPromise.resolve(callback()).then(() => { throw error })
+            )
+            
+            return nextPromise
+        }
+        
+        static resolve(value) {
+            if (value instanceof SuperPromise) return value
+            
+            return new SuperPromise((resolve, reject) => resolve(value))
+        }
+        
+        static reject(value) {
+            return new SuperPromise((resolve, reject) => reject(value))
+        }
+        
+        static all(promiseArr) {
+            const len = promiseArr?.length
+            
+            if (!len) return []
+            
+            return new SuperPromise((resolve, reject) => {
+                
+                let isDone = false
+                
+                let count = 0
+                
+                const resultArr = []
+                
+                const updateFulfilled = (itemData, index) => {
+                    if (isDone) return
+                    
+                    count++
+                    
+                    resultArr[index] = itemData
+                    
+                    count === len && resolve(resultArr)
+                }
+                
+                const oneRejected = data => {
+                    if (isDone) return
+                    
+                    isDone = true
+                    
+                    reject(data)
+                }
+                
+                promiseArr.forEach((item, index) => {
+                    if (item instanceof SuperPromise) {
+                        item.then(
+                            data => updateFulfilled(data, index),
+                            error => oneRejected(error)
+                        )
+                    }
+                    else {
+                        updateFulfilled(item, index)
+                    }
+                })
+            })
+        }
+        
+        static race(promiseArr) {
+            if (!promiseArr?.length) return []
+            
+            return new SuperPromise((resolve, reject) => {
+                
+                let isDone = false
+                
+                function resolveOne(fn, data) {
+                    if (!isDone) {
+                        isDone = true
+                        
+                        fn(data)
+                    }
+                }
+                
+                promiseArr.forEach(item => {
+                    if (item instanceof SuperPromise) {
+                        item.then(
+                            data => resolveOne(resolve, data),
+                            error => resolveOne(reject, error)
+                        )
+                    }
+                    else {
+                        resolveOne(resolve, item)
+                    }
+                })
+            })
+        }
+        
+        static allSettled(promiseArr) {
+            const len = promiseArr?.length
+            
+            if (!len) return []
+            
+            return new SuperPromise(resolve => {
+                
+                let count = 0
+                
+                const resultArr = []
+                
+                function updateResult(item, index) {
+                    count++
+                    
+                    resultArr[index] = {
+                        status: item.status,
+                        value: item[item.status + 'Value']
+                    }
+                    
+                    count === len && resolve(resultArr)
+                }
+                
+                promiseArr.forEach((item, index) => {
+                    if (item instanceof SuperPromise) {
+                        item.then(
+                            () => updateResult(item, index),
+                            () => updateResult(item, index)
+                        )
+                    }
+                    else {
+                        updateResult({status: 'fulfilled', fulfilledValue: item}, index)
+                    }
+                })
+            })
+        }
+    }
+    
+    function promiseResultHandler(promise, resultValue, resolve, reject) {
+        
+        if (promise === resultValue) {
+            return reject(new TypeError(`Chaining cycle detected for promise #<Promise>`))
+        }
+        
+        if (resultValue instanceof SuperPromise) {
+            queueMicrotask(() => {
+                try {
+                    resultValue.then(
+                        resultValue => {
+                            promiseResultHandler(promise, resultValue, resolve, reject)
+                        },
+                        error => {
+                            reject(error)
+                        }
+                    )
+                }
+                catch (e) {
+                    reject(e)
+                }
+            })
+        }
+        else resolve(resultValue)
+    }
+</script>
+
+<script>
+    SuperPromise
+        .resolve()
+        .then(() => {
+            console.log(0)
+            return SuperPromise.resolve(4)
+        })
+        .then((res) => {
+            console.log(res)
+        })
+    
+    SuperPromise
+        .resolve()
+        .then(() => {
+            console.log(1)
+        })
+        .then(() => {
+            console.log(2)
+        })
+        .then(() => {
+            console.log(3)
+        })
+        .then(() => {
+            console.log(5)
+        })
+        .then(() => {
+            console.log(6)
+        })
+</script>
+</body>
+</html>

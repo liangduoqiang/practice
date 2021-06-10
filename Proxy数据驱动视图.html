@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+    <meta charset='UTF-8'>
+    <title>Title</title>
+</head>
+<body>
+
+<div></div>
+<div></div>
+<div></div>
+
+<input type='text' placeholder='Enter value'>
+
+<script>
+    const render = {
+        setup(run) {
+            const options = run()
+            this.update(['div'], options.data.text)
+        },
+        update(...args) {
+            this.patch(args)
+        },
+        patch([tag, dataStr]) {
+            tag.forEach(item => {
+                [...document.querySelectorAll(item)].forEach(item => item.textContent = dataStr)
+            })
+        }
+    }
+    
+    function reactive(data) {
+        return new Proxy(data, {
+            set(target, p, value, receiver) {
+                Reflect.set(target, p, value)
+                
+                render.update(['div'], value)
+            }
+        })
+    }
+</script>
+
+<script>
+    render.setup(function() {
+        const data = reactive({ text: 'span init value' })
+    
+        document.querySelector('input')
+                .addEventListener('input', function() { data.text = this.value })
+        
+        return {
+            data
+        }
+    })
+</script>
+</body>
+</html>
