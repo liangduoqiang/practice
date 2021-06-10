@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+    <meta charset='UTF-8'>
+    <title>Title</title>
+</head>
+<body>
+<script>
+    class Dep {
+        constructor() {
+        
+        }
+        
+        subs = []
+        
+        depend(watcher) {
+            this.subs.push(watcher)
+            
+            return this
+        }
+        
+        notify() {
+            if (this.subs.length) {
+                this.subs.forEach(item => item())
+                
+                this.subs = []
+            }
+        }
+    }
+    
+    const dep1 = new Dep()
+    dep1.depend(() => console.log('watcher 1'))
+       .depend(() => console.log('watcher 2'))
+    
+    new Promise(resolve => setTimeout(resolve, 2000)).then(() => dep1.notify())
+    
+    const dep2 = new Dep()
+    dep2.depend(() => console.log('watcher 3'))
+       .depend(() => console.log('watcher 4'))
+    
+    new Promise(resolve => setTimeout(resolve, 3000)).then(() => dep2.notify())
+</script>
+
+<script>
+    const dep = {
+        watchers: {},
+        on(eventName, handler) {
+            const watchers = this.watchers[eventName] || ( this.watchers[eventName] = [] )
+            
+            watchers.push(handler)
+        },
+        emit(eventName) {
+            const watchers = this.watchers[eventName]
+    
+            watchers.forEach(item => item())
+        },
+        off(eventName, handler) {
+            const watchers = this.watchers[eventName]
+            
+            if (watchers?.length) {
+                watchers.splice( watchers.findIndex(item => item === handler), 1 )
+    
+                if (!watchers.length) {
+                    delete this.watchers[eventName]
+                }
+            }
+        },
+        once(eventName, handler) {
+            
+            const _handler = () => {
+                this.off(eventName, _handler)
+                handler()
+            }
+            
+            this.on(eventName, _handler)
+        }
+    }
+    
+    const handler1 = () => console.log('onLoadData1 watcher')
+    const handler2 = () => console.log('onLoadData2 watcher')
+    const handler3 = () => console.log('onLoadData3 watcher')
+    const handler4 = () => console.log('onLoadData4 watcher')
+    
+    dep.once('onLoadData1', handler1)
+    dep.on('onLoadData2', handler2)
+    dep.on('onLoadData3', handler3)
+    dep.on('onLoadData3', handler4)
+
+    setTimeout(() => {
+        dep.emit('onLoadData1')
+    }, 1000)
+    setTimeout(() => {
+        dep.emit('onLoadData2')
+        dep.off('onLoadData2', handler2)
+    }, 2000)
+    setTimeout(() => {
+        dep.emit('onLoadData3')
+        dep.off('onLoadData3', handler3)
+        
+        console.log(dep.watchers)
+    }, 3000)
+</script>
+
+</body>
+</html>
