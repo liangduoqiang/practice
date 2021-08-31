@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang='en'>
+<head>
+    <meta charset='UTF-8'>
+    <meta name='viewport'
+          content='width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0'>
+    <meta http-equiv='X-UA-Compatible' content='ie=edge'>
+    <title>Document</title>
+</head>
+<body>
+
+<div id='app'>
+    <p>{{ count }}</p>
+</div>
+
+<button>add</button>
+
+<script>
+    const effectCallbacks = []
+
+    // 更新函数的维护者
+    function effect(update) {
+        function _effect() {
+            try {
+                effectCallbacks.push(update)
+                update()
+            } finally {
+                effectCallbacks.pop()
+            }
+        }
+    
+        _effect()
+        
+        return _effect
+    }
+
+    const depMap = new WeakMap()
+    
+    // 依赖收集
+    function track(target, key) {
+        const update = effectCallbacks[effectCallbacks.length - 1]
+        
+        if (!update) return
+        
+        let targetWrap = depMap.get(target)
+        
+        if (!targetWrap) {
+            targetWrap = new Map()
+            depMap.set(target, targetWrap)
+        }
+        
+        let keyWrap = targetWrap.get(key)
+        
+        if (!keyWrap) {
+            keyWrap = new Set()
+            targetWrap.set(key, keyWrap)
+        }
+    
+        keyWrap.add(update)
+    }
+    
+    // 派发更新
+    function trigger(target, key) {
+        const targetWrap = depMap.get(target)
+        
+        if (targetWrap) {
+            
+            const keyWrap = targetWrap.get(key)
+    
+            keyWrap && keyWrap.forEach(update => update())
+        }
+    }
+    
+    const Vue = {
+        createRenderer(nodeOps) {
+            return {
+                createApp(ops) {
+                    return {
+                        mount(el) {
+                            const parent = nodeOps.querySelector(el)
+                            
+                            this.data = ops.setup()
+    
+                            effect(() => {
+                                parent.innerHTML = ''
+                                nodeOps.insert(parent, this.render())
+                                
+                                console.log('update')
+                            })
+                            
+                        },
+                        render() {
+                            const p = nodeOps.createElement('p')
+                            p.textContent = this.data.count
+                            
+                            return p
+                        }
+                    }
+                }
+            }
+        },
+        createApp(ops) {
+            const render = Vue.createRenderer({
+                createElement(el) {
+                    return document.createElement(el)
+                },
+                querySelector(el) {
+                    return document.querySelector(el)
+                },
+                insert(parent, child) {
+                    return parent.appendChild(child)
+                }
+            })
+            
+            return render.createApp(ops)
+        },
+        reactive(data) {
+            return new Proxy(data, {
+                get(target, key) {
+                    // 收集依赖
+                    track(target, key)
+                    
+                    return target[key]
+                },
+                set(target, key, value) {
+                    if (target[key] === value) return
+                    
+                    target[key] = value
+    
+                    // 派发更新
+                    trigger(target, key)
+                }
+            })
+        }
+    }
+</script>
+
+<script>
+    const { createApp, reactive } = Vue
+    
+    const app = createApp({
+        setup() {
+            const state = reactive({
+                count: 1
+            })
+            
+            document.querySelector('button').addEventListener('click', event => {
+                state.count++
+            })
+            
+            return state
+        }
+    })
+    
+    app.mount('#app')
+</script>
+
+</body>
+</html>
