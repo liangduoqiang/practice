@@ -1,0 +1,1 @@
+f test() { console.log('test my loader') }
