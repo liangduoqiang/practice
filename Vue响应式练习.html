@@ -16,24 +16,26 @@
 <button>add</button>
 
 <script>
+    // 激活状态的所有订阅者
     const effectCallbacks = []
-
-    // 更新函数的维护者
+    
     function effect(update) {
         function _effect() {
             try {
                 effectCallbacks.push(update)
                 update()
-            } finally {
+            }
+            finally {
                 effectCallbacks.pop()
             }
         }
-    
+        
         _effect()
         
         return _effect
     }
-
+    
+    // 依赖树
     const depMap = new WeakMap()
     
     // 依赖收集
@@ -55,7 +57,7 @@
             keyWrap = new Set()
             targetWrap.set(key, keyWrap)
         }
-    
+        
         keyWrap.add(update)
     }
     
@@ -66,21 +68,21 @@
         if (targetWrap) {
             
             const keyWrap = targetWrap.get(key)
-    
+            
             keyWrap && keyWrap.forEach(update => update())
         }
     }
     
     const Vue = {
         createRenderer(nodeOps) {
-            return {
+            const render = {
                 createApp(ops) {
-                    return {
+                    const instance = {
                         mount(el) {
                             const parent = nodeOps.querySelector(el)
                             
                             this.data = ops.setup()
-    
+                            
                             effect(() => {
                                 parent.innerHTML = ''
                                 nodeOps.insert(parent, this.render())
@@ -96,11 +98,14 @@
                             return p
                         }
                     }
+                    
+                    return instance
                 }
             }
+            return render
         },
         createApp(ops) {
-            const render = Vue.createRenderer({
+            const nodeOps = {
                 createElement(el) {
                     return document.createElement(el)
                 },
@@ -110,12 +115,16 @@
                 insert(parent, child) {
                     return parent.appendChild(child)
                 }
-            })
+            }
             
-            return render.createApp(ops)
+            const render = Vue.createRenderer(nodeOps)
+            
+            const instance = render.createApp(ops)
+            
+            return instance
         },
         reactive(data) {
-            return new Proxy(data, {
+            const proyxState = new Proxy(data, {
                 get(target, key) {
                     // 收集依赖
                     track(target, key)
@@ -126,17 +135,19 @@
                     if (target[key] === value) return
                     
                     target[key] = value
-    
+                    
                     // 派发更新
                     trigger(target, key)
                 }
             })
+    
+            return proyxState
         }
     }
 </script>
 
 <script>
-    const { createApp, reactive } = Vue
+    const {createApp, reactive} = Vue
     
     const app = createApp({
         setup() {

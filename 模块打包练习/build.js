@@ -62,7 +62,7 @@ function getDeps(temp, { deps }) {
 }
 
 function bundle(file) {
-    const depsGraph = JSON.stringify(parseModules(file));
+    const depsGraph = JSON.stringify(parseModules(file))
     return `(function (graph) {
                  function require(file) {
                      function absRequire(relPath) {
